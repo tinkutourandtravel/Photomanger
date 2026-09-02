@@ -1,0 +1,385 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum Visibility {
+  PRIVATE
+  SHARED
+  PUBLIC
+}
+
+enum PermissionLevel {
+  VIEW
+  EDIT
+  MANAGE
+}
+
+enum NotificationType {
+  SYSTEM
+  SHARE
+  COMMENT
+  LIKE
+  UPLOAD
+  UPDATE
+}
+
+enum StorageProvider {
+  S3
+  GCS
+  DO_SPACES
+  LOCAL
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  username        String    @unique
+  passwordHash    String?
+  avatarUrl       String?
+  bio             String?
+  role            UserRole  @default(USER)
+  isActive        Boolean   @default(true)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  profile         Profile?
+  photos          Photo[]
+  albums          Album[]
+  folders         Folder[]
+  favorites       Favorite[]
+  notification    Notification[]
+  storageMetadata StorageMetadata[]
+  sessions        Session[]
+  accounts        Account[]
+  permissions     SharePermission[]
+  sharedPhotos    SharedPhoto[]
+  sharedAlbums    SharedAlbum[]
+  tags            Tag[]
+  photoTags       PhotoTag[]
+  trashItems      TrashItem[]
+
+  @@index([email])
+  @@index([username])
+  @@index([isActive])
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  displayName String?
+  timezone    String   @default("UTC")
+  locale      String   @default("en-US")
+  preferences Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  sessionToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refreshToken      String?
+  accessToken       String?
+  expiresAt         Int?
+  tokenType         String?
+  scope             String?
+  idToken           String?
+  sessionState      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model StorageMetadata {
+  id              String          @id @default(cuid())
+  userId          String
+  photoId         String?
+  albumId         String?
+  provider        StorageProvider @default(S3)
+  bucket          String
+  objectKey       String
+  fileSizeBytes   BigInt
+  totalUsedBytes  BigInt          @default(0)
+  quotaLimitBytes BigInt          @default(0)
+  lastSyncedAt    DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photo Photo? @relation(fields: [photoId], references: [id], onDelete: SetNull)
+  album Album? @relation(fields: [albumId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([photoId])
+  @@index([albumId])
+}
+
+model Photo {
+  id            String     @id @default(cuid())
+  userId        String
+  folderId      String?
+  title         String
+  filename      String
+  originalName  String?
+  url           String
+  storageKey    String
+  mimeType      String
+  width         Int?
+  height        Int?
+  fileSizeBytes BigInt     @default(0)
+  checksum      String?
+  visibility    Visibility @default(PRIVATE)
+  description   String?
+  takenAt       DateTime?
+  isDeleted     Boolean    @default(false)
+  deletedAt     DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder        Folder?           @relation("FolderPhotos", fields: [folderId], references: [id], onDelete: SetNull)
+  albumPhotos   AlbumPhoto[]
+  favorites     Favorite[]
+  tags          PhotoTag[]
+  sharedPhotos  SharedPhoto[]
+  storage       StorageMetadata[]
+  trashItems    TrashItem[]
+  notifications Notification[]
+
+  @@index([userId, createdAt])
+  @@index([folderId])
+  @@index([visibility])
+  @@index([isDeleted, deletedAt])
+}
+
+model Album {
+  id          String     @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  coverUrl    String?
+  visibility  Visibility @default(PRIVATE)
+  isDeleted   Boolean    @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photos       AlbumPhoto[]
+  storage      StorageMetadata[]
+  sharedAlbums SharedAlbum[]
+  trashItems   TrashItem[]
+
+  @@index([userId, createdAt])
+  @@index([visibility])
+  @@index([isDeleted, deletedAt])
+}
+
+model AlbumPhoto {
+  id        String   @id @default(cuid())
+  albumId   String
+  photoId   String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  photo Photo @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, photoId])
+  @@index([albumId, order])
+  @@index([photoId])
+}
+
+model Folder {
+  id        String    @id @default(cuid())
+  userId    String
+  parentId  String?
+  name      String
+  color     String?
+  path      String?
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent     Folder?     @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Folder[]    @relation("FolderHierarchy")
+  photos     Photo[]     @relation("FolderPhotos")
+  trashItems TrashItem[]
+
+  @@index([userId, parentId])
+  @@index([name])
+  @@index([isDeleted, deletedAt])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  photoId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photo Photo @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, photoId])
+  @@index([userId])
+  @@index([photoId])
+}
+
+model SharedPhoto {
+  id              String          @id @default(cuid())
+  userId          String
+  photoId         String
+  shareToken      String          @unique
+  permissionLevel PermissionLevel @default(VIEW)
+  expiresAt       DateTime?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  owner       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photo       Photo             @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  permissions SharePermission[]
+
+  @@unique([userId, photoId])
+  @@index([isActive])
+}
+
+model SharedAlbum {
+  id              String          @id @default(cuid())
+  userId          String
+  albumId         String
+  shareToken      String          @unique
+  permissionLevel PermissionLevel @default(VIEW)
+  expiresAt       DateTime?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  owner       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  album       Album             @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  permissions SharePermission[]
+
+  @@unique([userId, albumId])
+  @@index([isActive])
+}
+
+model SharePermission {
+  id              String          @id @default(cuid())
+  userId          String
+  sharedPhotoId   String?
+  sharedAlbumId   String?
+  permissionLevel PermissionLevel @default(VIEW)
+  grantedAt       DateTime        @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sharedPhoto SharedPhoto? @relation(fields: [sharedPhotoId], references: [id], onDelete: Cascade)
+  sharedAlbum SharedAlbum? @relation(fields: [sharedAlbumId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sharedPhotoId])
+  @@index([sharedAlbumId])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  slug      String
+  createdAt DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photoTags PhotoTag[]
+
+  @@unique([userId, slug])
+  @@index([userId, name])
+}
+
+model PhotoTag {
+  id        String   @id @default(cuid())
+  photoId   String
+  tagId     String
+  userId    String
+  createdAt DateTime @default(now())
+
+  photo Photo @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([photoId, tagId])
+  @@index([photoId])
+  @@index([tagId])
+  @@index([userId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  photoId   String?
+  type      NotificationType @default(SYSTEM)
+  title     String
+  message   String
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photo Photo? @relation(fields: [photoId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([readAt])
+}
+
+model TrashItem {
+  id           String   @id @default(cuid())
+  userId       String
+  photoId      String?
+  albumId      String?
+  folderId     String?
+  reason       String?
+  deletedAt    DateTime @default(now())
+  restoreToken String?  @unique
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photo  Photo?  @relation(fields: [photoId], references: [id], onDelete: SetNull)
+  album  Album?  @relation(fields: [albumId], references: [id], onDelete: SetNull)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([userId, deletedAt])
+  @@index([photoId])
+  @@index([albumId])
+  @@index([folderId])
+}
